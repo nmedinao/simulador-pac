@@ -23,6 +23,22 @@ Simulador para dimensionar mensualmente el número de personas (FTE) necesarias 
 pip install -r requirements.txt
 ```
 
+Alternativa conda (recomendada si usas Anaconda/Miniconda):
+
+```bash
+# Crear entorno con Python 3.10
+conda create -n simulpac python=3.10 -y
+
+# Activar el entorno
+conda activate simulpac
+
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Asegurar Streamlit
+pip install streamlit
+```
+
 ## Seguridad y Autenticación
 
 El simulador incluye un sistema de autenticación con contraseña para restringir el acceso.
@@ -131,7 +147,10 @@ Una vez desplegado:
 3. **Proceso de Orientación**:
    - Sesiones base por empresa (2)
    - % empresas solo sesiones base (70%)
-   - Sesiones adicionales promedio (2)
+   - Sesiones adicionales promedio por tipología:
+     - Pequeña: 1
+     - Mediana: 2
+     - Grande: 5
    - Duración sesiones (120 min)
 4. **Tiempos por expediente**:
    - Inscripción Mes 1: 132 min
