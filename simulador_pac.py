@@ -125,24 +125,49 @@ pct_solo_base = st.sidebar.slider(
     step=5
 )
 
-sesiones_adicionales = st.sidebar.number_input(
-    "Sesiones adicionales promedio",
+# Sesiones adicionales por tipología (valores por defecto solicitados)
+sesiones_adicionales_pequena = st.sidebar.number_input(
+    "Sesiones adicionales promedio - pequeña",
+    min_value=0,
+    value=1,
+    step=1
+)
+
+sesiones_adicionales_mediana = st.sidebar.number_input(
+    "Sesiones adicionales promedio - mediana",
     min_value=0,
     value=2,
     step=1
 )
 
+sesiones_adicionales_grande = st.sidebar.number_input(
+    "Sesiones adicionales promedio - grande",
+    min_value=0,
+    value=5,
+    step=1
+)
+
+# Estructura por tipología para pasar a las funciones de cálculo
+sesiones_adicionales_por_tipo = {
+    "pequena": sesiones_adicionales_pequena,
+    "mediana": sesiones_adicionales_mediana,
+    "grande": sesiones_adicionales_grande,
+}
+
+# Mantener variable global de compatibilidad (valor por defecto igual a mediana)
+sesiones_adicionales = sesiones_adicionales_mediana
+
 duracion_sesion_base = st.sidebar.number_input(
     "Duración sesión base (min)",
     min_value=1,
-    value=120,
+    value=90,
     step=5
 )
 
 duracion_sesion_adicional = st.sidebar.number_input(
     "Duración sesión adicional (min)",
     min_value=1,
-    value=120,
+    value=90,
     step=5
 )
 
@@ -240,7 +265,7 @@ st.sidebar.subheader("📈 Factores de Escenarios")
 factor_agresivo = st.sidebar.number_input(
     "Factor escenario agresivo",
     min_value=0.1,
-    value=1.5,
+    value=2.0,
     step=0.1
 )
 
@@ -289,7 +314,7 @@ with col3:
     empresas_mes3 = st.number_input(
         "Total empresas",
         min_value=0,
-        value=20,
+        value=25,
         step=1,
         key="total_mes_3"
     )
@@ -311,14 +336,14 @@ with col5:
     empresas_mes5 = st.number_input(
         "Total empresas",
         min_value=0,
-        value=50,
+        value=100,
         step=1,
         key="total_mes_5"
     )
     total_empresas_mes.append(empresas_mes5)
 
 # Mostrar distribución por tipología
-st.subheader("📊 Distribución por Tipología (calculada)")
+st.subheader("📊 Distribución de Empresas por Tipología (calculada)")
 
 df_distribucion = pd.DataFrame({
     'Mes': range(1, 6),
@@ -369,9 +394,23 @@ def distribuir_empresas_por_tipologia(total_empresas):
 
 def calcular_carga_orientacion(empresas_mes):
     """Calcula la carga total de orientación en minutos para un mes"""
-    total_empresas = sum(empresas_mes)
-    tiempo_por_empresa = calcular_tiempo_orientacion_por_empresa()
-    return total_empresas * tiempo_por_empresa
+    # Espera empresas_mes = [pequenas, medianas, grandes]
+    pequenas, medianas, grandes = empresas_mes
+
+    # Si existe la estructura por tipo, usarla; si no, usar el cálculo global
+    try:
+        tiempos_por_tipo = calcular_tiempos_orientacion_por_tipo(sesiones_adicionales_por_tipo)
+        carga = (
+            pequenas * tiempos_por_tipo['pequena'] +
+            medianas * tiempos_por_tipo['mediana'] +
+            grandes * tiempos_por_tipo['grande']
+        )
+        return carga
+    except NameError:
+        # Fallback: comportamiento anterior (global)
+        total_empresas = sum(empresas_mes)
+        tiempo_por_empresa = calcular_tiempo_orientacion_por_empresa()
+        return total_empresas * tiempo_por_empresa
 
 def calcular_expedientes_mes(empresas_mes):
     """Calcula el total de expedientes generados en un mes"""
@@ -382,6 +421,24 @@ def calcular_expedientes_mes(empresas_mes):
         grandes_mes * expedientes_grande
     )
     return total_expedientes
+
+
+def calcular_tiempos_orientacion_por_tipo(sesiones_adicionales_dict):
+    """Calcula el tiempo promedio de orientación por empresa para cada tipología.
+
+    sesiones_adicionales_dict: dict con claves 'pequena','mediana','grande'
+    devuelve dict con minutos por empresa para cada tipo
+    """
+    tiempo_base = sesiones_base * duracion_sesion_base
+    pct_adicionales = (100 - pct_solo_base) / 100
+
+    tiempos = {}
+    for tipo in ['pequena', 'mediana', 'grande']:
+        sesiones_add = int(sesiones_adicionales_dict.get(tipo, 0))
+        tiempo_adicional = sesiones_add * duracion_sesion_adicional * pct_adicionales
+        tiempos[tipo] = tiempo_base + tiempo_adicional
+
+    return tiempos
 
 def ejecutar_simulacion():
     """Ejecuta la simulación completa y retorna los resultados"""
@@ -403,8 +460,17 @@ def ejecutar_simulacion():
         'empresas_grandes': [],
         'expedientes_generados': [],
         'carga_orientacion': [],
+        'carga_orientacion_pequena': [],
+        'carga_orientacion_mediana': [],
+        'carga_orientacion_grande': [],
         'fte_orientacion': [],
+        'fte_orientacion_pequena': [],
+        'fte_orientacion_mediana': [],
+        'fte_orientacion_grande': [],
         'personas_orientacion': [],
+        'personas_orientacion_pequena': [],
+        'personas_orientacion_mediana': [],
+        'personas_orientacion_grande': [],
         'carga_inscripcion': [],
         'fte_inscripcion': [],
         'personas_inscripcion': [],
@@ -433,8 +499,25 @@ def ejecutar_simulacion():
         expedientes_mes = calcular_expedientes_mes(empresas_mes)
         
         # 1. ORIENTACIÓN
-        carga_orientacion = calcular_carga_orientacion(empresas_mes)
+        # Calcular carga por tipología usando los tiempos por tipo
+        tiempos_por_tipo = calcular_tiempos_orientacion_por_tipo(sesiones_adicionales_por_tipo)
+
+        carga_orientacion_peq = pequenas_mes * tiempos_por_tipo['pequena']
+        carga_orientacion_med = medianas_mes * tiempos_por_tipo['mediana']
+        carga_orientacion_gr = grandes_mes * tiempos_por_tipo['grande']
+
+        carga_orientacion = carga_orientacion_peq + carga_orientacion_med + carga_orientacion_gr
+
+        fte_orientacion_peq = carga_orientacion_peq / minutos_por_fte
+        fte_orientacion_med = carga_orientacion_med / minutos_por_fte
+        fte_orientacion_gr = carga_orientacion_gr / minutos_por_fte
+
         fte_orientacion = carga_orientacion / minutos_por_fte
+
+        personas_orientacion_peq = int(np.ceil(fte_orientacion_peq))
+        personas_orientacion_med = int(np.ceil(fte_orientacion_med))
+        personas_orientacion_gr = int(np.ceil(fte_orientacion_gr))
+
         personas_orientacion = int(np.ceil(fte_orientacion))
         
         # 2. INSCRIPCIÓN
@@ -485,8 +568,17 @@ def ejecutar_simulacion():
         resultados['empresas_grandes'].append(grandes_mes)
         resultados['expedientes_generados'].append(expedientes_mes)
         resultados['carga_orientacion'].append(carga_orientacion)
+        resultados['carga_orientacion_pequena'].append(carga_orientacion_peq)
+        resultados['carga_orientacion_mediana'].append(carga_orientacion_med)
+        resultados['carga_orientacion_grande'].append(carga_orientacion_gr)
         resultados['fte_orientacion'].append(fte_orientacion)
+        resultados['fte_orientacion_pequena'].append(fte_orientacion_peq)
+        resultados['fte_orientacion_mediana'].append(fte_orientacion_med)
+        resultados['fte_orientacion_grande'].append(fte_orientacion_gr)
         resultados['personas_orientacion'].append(personas_orientacion)
+        resultados['personas_orientacion_pequena'].append(personas_orientacion_peq)
+        resultados['personas_orientacion_mediana'].append(personas_orientacion_med)
+        resultados['personas_orientacion_grande'].append(personas_orientacion_gr)
         resultados['carga_inscripcion'].append(carga_inscripcion)
         resultados['fte_inscripcion'].append(fte_inscripcion)
         resultados['personas_inscripcion'].append(personas_inscripcion)
@@ -510,7 +602,6 @@ if st.button("🚀 Ejecutar Simulación", type="primary"):
     
     # Ejecutar simulación
     df_resultados = ejecutar_simulacion()
-    
     # Verificar si la simulación fue exitosa
     if df_resultados is None:
         st.stop()
@@ -584,7 +675,7 @@ if st.button("🚀 Ejecutar Simulación", type="primary"):
     # ========================================================================
     # TABLA DE FTE Y PERSONAS POR PROCESO
     # ========================================================================
-    st.subheader("👥 Dimensionamiento por Proceso y Mes")
+    st.subheader("👥 Dimensionamiento por Fase del Proceso y Mes")
     
     # Crear tabla pivotada para mejor visualización
     procesos = ['Orientación', 'Inscripción', 'Asesoramiento', 'Evaluación', 'Acreditación']
@@ -602,6 +693,23 @@ if st.button("🚀 Ejecutar Simulación", type="primary"):
         })
         
         st.dataframe(df_proceso, hide_index=True, use_container_width=True)
+        # Si es Orientación, mostrar desglose por tipología
+        if proceso_key == 'orientacion':
+            df_orient_tipo = pd.DataFrame({
+                'Mes': df_resultados['mes'],
+                'Carga Pequeña (min)': df_resultados['carga_orientacion_pequena'].astype(int),
+                'Carga Mediana (min)': df_resultados['carga_orientacion_mediana'].astype(int),
+                'Carga Grande (min)': df_resultados['carga_orientacion_grande'].astype(int),
+                'FTE Pequeña': df_resultados['fte_orientacion_pequena'].round(2),
+                'FTE Mediana': df_resultados['fte_orientacion_mediana'].round(2),
+                'FTE Grande': df_resultados['fte_orientacion_grande'].round(2),
+                'Personas Pequeña': df_resultados['personas_orientacion_pequena'],
+                'Personas Mediana': df_resultados['personas_orientacion_mediana'],
+                'Personas Grande': df_resultados['personas_orientacion_grande']
+            })
+            st.write("**Desglose Orientación por Tipología**")
+            st.dataframe(df_orient_tipo, hide_index=True, use_container_width=True)
+
         st.markdown("---")
     
     # ========================================================================
